@@ -1,0 +1,23 @@
+name: acervo
+description: Biblioteca pessoal offline de jogos com caixas 3D interativas.
+publish_to: none
+version: 0.10.0+10
+environment:
+  sdk: '>=3.10.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  path_provider: ^2.1.6
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true
+  assets:
+    - modelos/case.glb
+
+
+
+
+
