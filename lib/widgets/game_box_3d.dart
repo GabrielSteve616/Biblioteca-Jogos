@@ -169,7 +169,8 @@ class GameBox3DState extends State<GameBox3D> with TickerProviderStateMixin {
           'PS4' => 'PlayStation 4',
           'PS5' => 'PlayStation 5',
           'Android' => 'ANDROID',
-          _ => 'STEAM • PC',
+          'Steam' => 'STEAM • PC',
+          _ => 'BIBLIOTECA',
         },
         style: TextStyle(
           fontFamily: 'Roboto',
@@ -384,8 +385,8 @@ class GameBox3DState extends State<GameBox3D> with TickerProviderStateMixin {
     removed ? removal.forward() : removal.reverse();
   }
 
-  void view(double angle) => setState(() {
-    rx = (angle.abs() - math.pi).abs() < .01 ? 0 : -.1;
+  void view(double angle, {double? tilt}) => setState(() {
+    rx = tilt ?? ((angle.abs() - math.pi).abs() < .01 ? 0 : -.1);
     ry = angle;
     discMode = false;
   });
@@ -563,9 +564,7 @@ class _Face {
   final Color color;
   final ui.Image? image;
   final List<Offset>? uv;
-  bool doubleSided = false;
   bool get backFacing {
-    if (doubleSided) return false;
     if (points.length != 4 && !cullMesh) return false;
     final a = points[0], b = points[1], c = points[2];
     return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x) >= 0;
@@ -989,6 +988,7 @@ class _BoxPainter extends CustomPainter {
       final lid = part.name == 'Cubo.001';
       final discPart = part.name == 'Círculo';
       final hub = part.name == 'Círculo.001';
+      if (open <= .001 && removal <= .001 && (discPart || hub)) continue;
       _part = lid
           ? 'lid'
           : discPart
@@ -1058,7 +1058,7 @@ class _BoxPainter extends CustomPainter {
             ? Color.lerp(profile.shell, Colors.black, .32)!
             : profile.shell;
         face([points[2], points[1], points[0], points[0]], color);
-        faces.last.doubleSided = !discPart;
+        // Respect the outward normals of the closed solid GLB shells.
         group(depth);
         if (discPart && disc != null) {
           final a = raw[0], b = raw[1], c = raw[2];
@@ -1082,19 +1082,21 @@ class _BoxPainter extends CustomPainter {
         group(depth, 2);
       }
     }
-    panel(
-      lid: false,
-      rear: false,
-      z: -.125,
-      color: Color.lerp(profile.shell, Colors.black, .5)!,
-    );
-    panel(
-      lid: true,
-      rear: true,
-      z: .11,
-      color: const Color(0xffd9d4c5),
-      image: booklet,
-    );
+    if (open > .001) {
+      panel(
+        lid: false,
+        rear: false,
+        z: -.125,
+        color: Color.lerp(profile.shell, Colors.black, .5)!,
+      );
+      panel(
+        lid: true,
+        rear: true,
+        z: .11,
+        color: const Color(0xffd9d4c5),
+        image: booklet,
+      );
+    }
     panel(lid: true, rear: false, z: .132, color: profile.shell, image: front);
     panel(lid: false, rear: true, z: -.162, color: profile.shell, image: back);
     _part = 'case';

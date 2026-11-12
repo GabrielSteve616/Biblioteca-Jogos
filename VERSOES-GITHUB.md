@@ -2,6 +2,59 @@
 
 Cada seção abaixo pode ser usada como descrição da release correspondente. Os textos estão em primeira pessoa, começando pela versão mais recente.
 
+## v0.13.3 — Atualizei o catálogo
+
+Atualizei a planilha e o ZIP com 279 jogos, incluindo cinco títulos novos e descrições revisadas. Mantive o reconhecimento dos jogos já importados para preservar minha biblioteca.
+
+## v0.13.2 — Backup e ícone atualizado
+
+Revisei o backup para escolher a pasta e o nome do arquivo JSON ao exportar. Ajustei a geração para usar menos memória e preservei a biblioteca se o backup estiver incompleto.
+
+Também atualizei a arte do ícone e adaptei o enquadramento para celulares Android, incluindo Samsung.
+
+## v0.13.1 — Novo ícone
+
+Atualizei o ícone do aplicativo usando a imagem de catálogo gamer azul que criei.
+
+## v0.13.0 — Biblioteca organizada e importação em segundo plano
+
+Agora posso escolher quais jogos da pasta jogos quero importar ou trazer todos de uma vez. Também fiz a importação continuar em segundo plano para poder usar a biblioteca enquanto as capas são preparadas.
+
+- Adicionei as opções Importar selecionados e Importar todos.
+- Mostro quais jogos já foram identificados na biblioteca para evitar repetição.
+- Coloquei o progresso na biblioteca e em uma notificação do Android, quando permitida.
+- Salvo o andamento para retomar ao abrir o aplicativo se a tarefa for interrompida.
+- Passei a usar SQLite no Android, migrando os dados existentes sem apagar o arquivo anterior.
+- Salvo o backup JSON com capas em Downloads e permito restaurar a biblioteca.
+- Acrescentei cinco gêneros mais comuns e filtros de jogos platinados ou fechados.
+- Organizo por console, gênero ou alfabeto e arrasto capas e lombadas para definir a ordem.
+- Salvo a visualização escolhida entre grade, estante e capa frontal.
+- Extraio do ZIP somente as capas dos jogos selecionados.
+- Mantive a escolha manual de plataformas e o funcionamento offline.
+
+## v0.12.0 — Importação de jogos com escolha de plataformas
+
+Adicionei a importação da planilha Excel junto com o ZIP das capas, sem precisar separar as imagens em pastas por plataforma.
+
+- Fiz a leitura dos nomes, descrições, gêneros, anos, classificações e números de jogadores.
+- Vinculei as capas pelo nome da imagem ou do jogo e adicionei uma revisão antes de salvar.
+- Deixei as plataformas em branco para escolher manualmente, por jogo ou em lote.
+- Permiti marcar várias plataformas no mesmo cadastro e criar jogos sem plataforma definida.
+- Adicionei a alteração de plataformas ao segurar a capa ou a lombada na biblioteca.
+- Deixei a pasta jogos pronta e incluí os arquivos atuais no APK como opção de carregamento.
+- Testei o catálogo de 254 jogos e suas 254 capas, preservando a coleção existente.
+
+O aplicativo continua 100% offline e mantém as cases 3D, os adesivos e os backups.
+
+## v0.11.0 — Corrigi as bordas da case
+
+Corrigi o problema que fazia as bordas parecerem abertas quando eu olhava a case pelos lados, por cima ou por baixo. As partes internas estavam aparecendo por cima das paredes externas mesmo com a tampa fechada.
+
+- Ajustei o desenho das faces para manter a case fechada como no modelo GLB.
+- Mantive a abertura pelo toque e o CD removível.
+- Conferi as laterais, o topo, a base e a visão diagonal.
+- Mantive o modelo original e o funcionamento 100% offline.
+
 ## v0.10.0 — Atualizei o modelo da case
 
 Nessa atualização, coloquei no aplicativo a nova versão da case 3D que fiz. Ajustei o encaixe das capas e das peças para acompanhar as mudanças no modelo.

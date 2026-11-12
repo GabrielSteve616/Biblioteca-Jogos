@@ -27,6 +27,35 @@ void main() {
       }
     },
   );
+  test(
+    'Both GLB shell halves have closed boundaries after welding split vertices',
+    () {
+      final model = CaseMesh.parse(ByteData.sublistView(bytes));
+      for (final part in model.parts.where(
+        (p) => p.name == 'Cubo' || p.name == 'Cubo.001',
+      )) {
+        final edges = <String, int>{};
+        String pointKey(MeshPoint p) =>
+            '${(p.x * 100000).round()},${(p.y * 100000).round()},${(p.z * 100000).round()}';
+        for (var i = 0; i < part.indices.length; i += 3) {
+          for (var side = 0; side < 3; side++) {
+            final a = pointKey(part.positions[part.indices[i + side]]);
+            final b = pointKey(
+              part.positions[part.indices[i + (side + 1) % 3]],
+            );
+            if (a == b) continue;
+            final key = a.compareTo(b) < 0 ? '$a|$b' : '$b|$a';
+            edges.update(key, (n) => n + 1, ifAbsent: () => 1);
+          }
+        }
+        expect(
+          edges.values.where((n) => n == 1),
+          isEmpty,
+          reason: '${part.name} must not have open edges',
+        );
+      }
+    },
+  );
   test('Node transforms retain the exported dimensions and disc placement', () {
     final model = CaseMesh.parse(ByteData.sublistView(bytes));
     final parts = model.parts;

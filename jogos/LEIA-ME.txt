@@ -1,0 +1,9 @@
+Coloque nesta pasta uma planilha .xlsx e um ZIP com as capas. Não é necessário separar as capas por plataforma nem editar a planilha.
+
+No aplicativo: menu ⋮ > Importar Excel + ZIP > Carregar pasta jogos.
+Os arquivos desta pasta são incluídos no APK no momento da compilação. Se trocar os arquivos no computador depois, gere um novo APK ou copie-os para o celular e use Escolher Excel e ZIP / Escolher pasta no celular.
+
+A revisão não salva nada automaticamente. Escolha as plataformas individualmente ou em lote, marque os jogos e toque em Importar selecionados; para carregar o catálogo inteiro, toque em Importar todos. Sem plataforma, o jogo fica em Sem plataforma definida. A importação continua em segundo plano; acompanhe o progresso na biblioteca e, se autorizada, na notificação.
+É possível escolher várias plataformas para o mesmo jogo. PS5 foi mantido para preservar a funcionalidade existente.
+
+O ZIP é consultado para mostrar as prévias; apenas as capas dos jogos selecionados são extraídas e salvas na biblioteca.

@@ -45,6 +45,93 @@ void main() {
     },
   );
 
+  test('Manual reorder and available genres are persisted', () async {
+    await store.put(
+      Game.empty()
+        ..id = 'g1'
+        ..title = 'Ação'
+        ..genre = 'Ação',
+    );
+    await store.put(
+      Game.empty()
+        ..id = 'g2'
+        ..title = 'RPG'
+        ..genre = 'RPG',
+    );
+    await store.put(
+      Game.empty()
+        ..id = 'g3'
+        ..title = 'Esporte'
+        ..genre = 'Esporte',
+    );
+    await store.reorderById('g3', 0);
+    expect(store.games.first.id, 'g3');
+    expect(store.availableGenres, ['Ação', 'Esporte', 'RPG']);
+  });
+
+  test(
+    'Available genres stay concise and favor the most common ones',
+    () async {
+      for (var i = 0; i < 5; i++) {
+        await store.put(
+          Game.empty()
+            ..id = 'genre_common_$i'
+            ..title = 'Comum $i'
+            ..genre = 'Ação',
+        );
+      }
+      for (var i = 0; i < 4; i++) {
+        await store.put(
+          Game.empty()
+            ..id = 'genre_rpg_$i'
+            ..title = 'RPG $i'
+            ..genre = 'RPG',
+        );
+      }
+      for (var i = 0; i < 3; i++) {
+        await store.put(
+          Game.empty()
+            ..id = 'genre_sports_$i'
+            ..title = 'Esporte $i'
+            ..genre = 'Esporte',
+        );
+      }
+      for (var i = 0; i < 30; i++) {
+        await store.put(
+          Game.empty()
+            ..id = 'genre_unique_$i'
+            ..title = 'Único $i'
+            ..genre = 'Gênero $i',
+        );
+      }
+      expect(store.availableGenres.length, 5);
+      expect(store.availableGenres.take(3), ['Ação', 'RPG', 'Esporte']);
+    },
+  );
+
+  test('The chosen view and filtered manual order survive reopening', () async {
+    await store.addAll([
+      Game(id: 'a', title: 'A', genre: 'Ação / Aventura'),
+      Game(id: 'hidden', title: 'Outro'),
+      Game(id: 'b', title: 'B', genre: 'Aventura'),
+    ]);
+    expect(store.availableGenres, contains('Aventura'));
+    await store.reorderVisible(['b', 'a']);
+    await store.setViewMode('estante');
+    final reopened = CollectionStore(directory);
+    await reopened.load();
+    expect(reopened.games.map((g) => g.id), ['b', 'hidden', 'a']);
+    expect(reopened.viewMode, 'estante');
+    final backup = await reopened.backup();
+    await reopened.setViewMode('grade');
+    await reopened.restore(backup);
+    expect(reopened.viewMode, 'estante');
+    await expectLater(
+      reopened.reorderVisible(['a', 'a']),
+      throwsFormatException,
+    );
+  });
+
   test('Missing database recovers the previous committed journal', () async {
     await store.put(Game.empty()..title = 'Seguro');
     await store.put(Game.empty()..title = 'Novo');

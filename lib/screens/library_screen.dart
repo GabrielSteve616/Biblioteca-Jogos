@@ -1,3 +1,8 @@
+import 'dart:async';
+import 'dart:io';
+import '../services/import_coordinator.dart';
+import '../widgets/platform_picker.dart';
+import 'catalog_import.dart';
 import '../widgets/book_shelf.dart';
 import 'package:flutter/material.dart';
 import '../models/game.dart';
@@ -14,10 +19,12 @@ class LibraryScreen extends StatefulWidget {
     required this.store,
     this.startupError,
     this.scanFolderOnStart = false,
+    this.coordinator,
   });
   final CollectionStore store;
   final String? startupError;
   final bool scanFolderOnStart;
+  final ImportCoordinator? coordinator;
   @override
   State<LibraryScreen> createState() => _LibraryScreenState();
 }
@@ -25,19 +32,37 @@ class LibraryScreen extends StatefulWidget {
 class _LibraryScreenState extends State<LibraryScreen> {
   String query = '',
       platform = 'Todas',
+      genre = 'Todos',
       progress = 'Todos',
-      order = 'Título A–Z';
-  bool shelf = false, busy = false;
+      order = 'Título A–Z',
+      viewMode = 'grade';
+  bool busy = false;
   String? notice;
+  late final importCoordinator =
+      widget.coordinator ?? ImportCoordinator.forStore(widget.store);
   @override
   void initState() {
     super.initState();
+    viewMode = widget.store.viewMode;
+    order = widget.store.orderMode;
     notice = widget.startupError ?? widget.store.recoveryMessage;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(importCoordinator.resumeIfPending());
+    });
     if (widget.scanFolderOnStart) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) importConfiguredFolder();
       });
     }
+  }
+
+  void changeView(String value) {
+    setState(() => viewMode = value);
+    unawaited(
+      widget.store.setViewMode(value).catchError((Object error) {
+        snack('Não foi possível salvar a visualização: $error');
+      }),
+    );
   }
 
   void snack(String text) {
@@ -57,6 +82,86 @@ class _LibraryScreenState extends State<LibraryScreen> {
       if (mounted) setState(() => busy = false);
     }
   }
+
+  Future<void> editPlatforms(Game game) async {
+    if (busy) return;
+    final stored = widget.store.games.firstWhere((g) => g.id == game.id);
+    final next = await choosePlatforms(context, stored.assignedPlatforms);
+    if (next != null && mounted) {
+      await task(
+        () => widget.store.put(stored.copy()..assignedPlatforms = next),
+      );
+    }
+  }
+
+  void reorder(Game moving, Game target, List<Game> displayed) {
+    if (moving.id == target.id || busy) return;
+    final ids = displayed.map((g) => g.id).toList();
+    final old = ids.indexOf(moving.id), next = ids.indexOf(target.id);
+    if (old < 0 || next < 0) return;
+    ids.insert(next, ids.removeAt(old));
+    unawaited(
+      task(() async {
+        await widget.store.reorderVisible(ids);
+        await widget.store.setOrderMode('Manual');
+        if (mounted) setState(() => order = 'Manual');
+      }),
+    );
+  }
+
+  Widget draggable(Game game, List<Game> displayed, Widget child) =>
+      DragTarget<Game>(
+        onWillAcceptWithDetails: (details) =>
+            !busy && details.data.id != game.id,
+        onAcceptWithDetails: (details) =>
+            reorder(details.data, game, displayed),
+        builder: (context, candidates, rejected) => LongPressDraggable<Game>(
+          key: ValueKey('drag-${game.id}'),
+          data: game,
+          maxSimultaneousDrags: busy ? 0 : 1,
+          feedback: Material(
+            color: Colors.transparent,
+            child: SizedBox(
+              width: 110,
+              height: 155,
+              child: Cover(game: game, store: widget.store),
+            ),
+          ),
+          childWhenDragging: Opacity(opacity: .35, child: child),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              child,
+              if (candidates.isNotEmpty)
+                IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Cyber.cyan, width: 3),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              Positioned(
+                top: 0,
+                right: 0,
+                child: PopupMenuButton<String>(
+                  tooltip: 'Opções de ${game.title}',
+                  padding: EdgeInsets.zero,
+                  iconSize: 19,
+                  icon: const Icon(Icons.more_vert),
+                  onSelected: (_) => editPlatforms(game),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: 'platforms',
+                      child: Text('Plataformas'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
 
   Future<void> add() async {
     await Navigator.push(
@@ -154,12 +259,25 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Future<void> export() => task(() async {
-    final data = await widget.store.backup();
-    if (await Documents.saveBackup(data)) {
-      snack('Backup salvo com os jogos e suas imagens.');
+    final base = await Directory(
+      '${widget.store.root.path}/backup_staging',
+    ).create(recursive: true);
+    final temporary = await base.createTemp('export_');
+    try {
+      final backup = File('${temporary.path}/Biblioteca-backup.json');
+      await widget.store.writeBackup(backup);
+      if (await Documents.saveBackup(backup.path)) {
+        snack('Backup JSON salvo com os jogos e suas imagens.');
+      }
+    } finally {
+      if (await temporary.exists()) await temporary.delete(recursive: true);
     }
   });
   Future<void> restore() async {
+    if (importCoordinator.pending) {
+      snack('Aguarde a importação atual terminar antes de restaurar o backup.');
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -181,10 +299,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
     if (confirmed != true) return;
     await task(() async {
-      final text = await Documents.openBackup();
-      if (text == null) return;
-      await widget.store.restore(text);
-      if (mounted) setState(() => notice = null);
+      final selectedPath = await Documents.openBackup();
+      if (selectedPath == null) return;
+      final copy = File(selectedPath);
+      try {
+        await widget.store.restoreFile(copy);
+      } finally {
+        if (await copy.exists()) await copy.delete();
+      }
+      if (mounted) {
+        setState(() {
+          notice = null;
+          viewMode = widget.store.viewMode;
+          order = widget.store.orderMode;
+        });
+      }
       snack('Coleção restaurada.');
     });
   }
@@ -194,17 +323,29 @@ class _LibraryScreenState extends State<LibraryScreen> {
       if (!g.title.toLowerCase().contains(query.toLowerCase().trim())) {
         return false;
       }
-      if (platform != 'Todas' && g.platform != platform) return false;
+      if (genre != 'Todos' &&
+          widget.store.availableGenres.contains(genre) &&
+          !g.genre.toLowerCase().contains(genre.toLowerCase().trim())) {
+        return false;
+      }
+      if (platform == Game.unassigned && g.assignedPlatforms.isNotEmpty) {
+        return false;
+      }
+      if (platform != 'Todas' &&
+          platform != Game.unassigned &&
+          !g.assignedPlatforms.contains(platform)) {
+        return false;
+      }
       return switch (progress) {
-        'Zerados' => g.finished,
-        'Não zerados' => !g.finished,
+        'Zerados' || 'Fechados' => g.finished,
+        'Não zerados' || 'Abertos' => !g.finished,
         'Platinados' => g.platinum,
         '100%' => g.complete,
         'Favoritos' => g.favorite,
         _ => true,
       };
     }).toList();
-    if (order == 'Título A–Z') {
+    if (order == 'Título A–Z' || order == 'Alfabética A–Z') {
       result.sort(
         (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
       );
@@ -212,12 +353,52 @@ class _LibraryScreenState extends State<LibraryScreen> {
     if (order == 'Recentes') {
       result.sort((a, b) => b.created.compareTo(a.created));
     }
+    if (order == 'Console') {
+      result.sort((a, b) {
+        final aKey = a.assignedPlatforms.isEmpty
+            ? 'zzz'
+            : a.assignedPlatforms.first;
+        final bKey = b.assignedPlatforms.isEmpty
+            ? 'zzz'
+            : b.assignedPlatforms.first;
+        final keyCompare = aKey.toLowerCase().compareTo(bKey.toLowerCase());
+        if (keyCompare != 0) return keyCompare;
+        return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+      });
+    }
+    if (order == 'Gênero') {
+      result.sort((a, b) {
+        final aKey = a.genre.trim().isEmpty ? 'zzz' : a.genre.trim();
+        final bKey = b.genre.trim().isEmpty ? 'zzz' : b.genre.trim();
+        final keyCompare = aKey.toLowerCase().compareTo(bKey.toLowerCase());
+        if (keyCompare != 0) return keyCompare;
+        return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+      });
+    }
+    if (order == 'Manual') {
+      result.sort((a, b) {
+        final indexA = widget.store.games.indexWhere((g) => g.id == a.id);
+        final indexB = widget.store.games.indexWhere((g) => g.id == b.id);
+        return indexA.compareTo(indexB);
+      });
+    }
+    if (Game.platforms.contains(platform)) {
+      return result
+          .map(
+            (g) => g.copy()
+              ..assignedPlatforms = [
+                platform,
+                ...g.assignedPlatforms.where((p) => p != platform),
+              ],
+          )
+          .toList();
+    }
     return result;
   }
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: widget.store,
+    listenable: Listenable.merge([widget.store, importCoordinator]),
     builder: (context, _) {
       final games = filtered(), all = widget.store.games;
       return Scaffold(
@@ -232,20 +413,81 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
           leading: const Icon(Icons.auto_stories_outlined, color: Cyber.cyan),
           actions: [
-            IconButton(
-              tooltip: 'Importar capas',
-              onPressed: busy ? null : () => importImages(),
-              icon: const Icon(Icons.add_photo_alternate_outlined),
+            PopupMenuButton<String>(
+              tooltip: 'Visualização',
+              initialValue: viewMode,
+              onSelected: changeView,
+              icon: Icon(switch (viewMode) {
+                'estante' => Icons.shelves,
+                'frontal' => Icons.library_books_rounded,
+                _ => Icons.grid_view_rounded,
+              }),
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                  value: 'grade',
+                  child: Row(
+                    children: const [
+                      Icon(Icons.grid_view_rounded, size: 18),
+                      SizedBox(width: 10),
+                      Text('Grade'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'estante',
+                  child: Row(
+                    children: const [
+                      Icon(Icons.shelves, size: 18),
+                      SizedBox(width: 10),
+                      Text('Estante'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'frontal',
+                  child: Row(
+                    children: const [
+                      Icon(Icons.library_books_rounded, size: 18),
+                      SizedBox(width: 10),
+                      Text('Capa frontal'),
+                    ],
+                  ),
+                ),
+              ],
             ),
             PopupMenuButton<String>(
               tooltip: 'Mais opções',
               onSelected: (value) {
+                if (value == 'catalog') {
+                  if (importCoordinator.pending) {
+                    snack(
+                      'Aguarde a importação atual terminar ou retome a tarefa pausada.',
+                    );
+                  } else {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => CatalogImport(
+                          store: widget.store,
+                          coordinator: importCoordinator,
+                        ),
+                      ),
+                    );
+                  }
+                }
                 if (value == 'configure') configureFolder();
                 if (value == 'scan') importConfiguredFolder();
                 if (value == 'export') export();
                 if (value == 'restore') restore();
               },
               itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: 'catalog',
+                  child: ListTile(
+                    leading: Icon(Icons.table_view_outlined),
+                    title: Text('Importar Excel + ZIP'),
+                  ),
+                ),
                 PopupMenuItem(
                   value: 'configure',
                   child: ListTile(
@@ -264,14 +506,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   value: 'export',
                   child: ListTile(
                     leading: Icon(Icons.upload_file_outlined),
-                    title: Text('Exportar'),
+                    title: Text('Exportar backup'),
                   ),
                 ),
                 PopupMenuItem(
                   value: 'restore',
                   child: ListTile(
                     leading: Icon(Icons.restore),
-                    title: Text('Restaurar'),
+                    title: Text('Restaurar backup'),
                   ),
                 ),
               ],
@@ -286,6 +528,67 @@ class _LibraryScreenState extends State<LibraryScreen> {
         body: Column(
           children: [
             if (busy) const LinearProgressIndicator(minHeight: 2),
+            if (importCoordinator.active ||
+                importCoordinator.error != null ||
+                importCoordinator.completed)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          importCoordinator.error != null
+                              ? Icons.error_outline
+                              : importCoordinator.completed
+                              ? Icons.check_circle_outline
+                              : Icons.downloading,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            importCoordinator.error ??
+                                (importCoordinator.completed
+                                    ? 'Importação concluída'
+                                    : 'Importando em segundo plano: ${importCoordinator.done}/${importCoordinator.total}'),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (importCoordinator.error != null &&
+                            !importCoordinator.active)
+                          IconButton(
+                            tooltip: 'Retomar importação',
+                            onPressed: importCoordinator.retry,
+                            icon: const Icon(Icons.refresh),
+                          ),
+                        if (importCoordinator.error != null &&
+                            !importCoordinator.active)
+                          IconButton(
+                            tooltip: 'Cancelar importação',
+                            onPressed: importCoordinator.discard,
+                            icon: const Icon(Icons.close),
+                          ),
+                        if (importCoordinator.completed)
+                          IconButton(
+                            tooltip: 'Dispensar',
+                            onPressed: importCoordinator.dismiss,
+                            icon: const Icon(Icons.close),
+                          ),
+                      ],
+                    ),
+                    if (importCoordinator.active)
+                      LinearProgressIndicator(
+                        value: importCoordinator.total == 0
+                            ? null
+                            : importCoordinator.done / importCoordinator.total,
+                      ),
+                  ],
+                ),
+              ),
+
             if (notice != null)
               MaterialBanner(
                 content: Text(notice!),
@@ -346,23 +649,29 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           ),
                           child: DropdownButtonHideUnderline(
                             child: DropdownButton<String>(
+                              key: const ValueKey('platform_filter'),
                               value: platform,
                               isExpanded: true,
                               icon: const Icon(
                                 Icons.keyboard_arrow_down,
                                 size: 18,
                               ),
-                              items: ['Todas', ...Game.platforms]
-                                  .map(
-                                    (p) => DropdownMenuItem(
-                                      value: p,
-                                      child: Text(
-                                        p,
-                                        style: const TextStyle(fontSize: 13),
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
+                              items:
+                                  ['Todas', Game.unassigned, ...Game.platforms]
+                                      .map(
+                                        (p) => DropdownMenuItem(
+                                          value: p,
+                                          child: Text(
+                                            p,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
                               onChanged: (p) => setState(() => platform = p!),
                             ),
                           ),
@@ -389,6 +698,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                   'Todos',
                                   'Zerados',
                                   'Não zerados',
+                                  'Fechados',
+                                  'Abertos',
                                   'Platinados',
                                   '100%',
                                   'Favoritos',
@@ -402,27 +713,98 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                 )
                                 .toList(),
                       ),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: Cyber.panel,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Cyber.border),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              key: const ValueKey('genre_filter'),
+                              isExpanded: true,
+                              value:
+                                  widget.store.availableGenres.contains(genre)
+                                  ? genre
+                                  : 'Todos',
+                              icon: const Icon(
+                                Icons.keyboard_arrow_down,
+                                size: 18,
+                              ),
+                              items: ['Todos', ...widget.store.availableGenres]
+                                  .map(
+                                    (g) => DropdownMenuItem(
+                                      value: g,
+                                      child: Text(
+                                        g,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontSize: 13),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (g) =>
+                                  setState(() => genre = g ?? 'Todos'),
+                            ),
+                          ),
+                        ),
+                      ),
                       PopupMenuButton<String>(
                         tooltip: 'Ordenar',
                         initialValue: order,
-                        onSelected: (v) => setState(() => order = v),
+                        onSelected: (v) {
+                          setState(() => order = v);
+                          unawaited(
+                            widget.store.setOrderMode(v).catchError((
+                              Object error,
+                            ) {
+                              snack(
+                                'Não foi possível salvar a ordenação: $error',
+                              );
+                            }),
+                          );
+                        },
                         icon: const Icon(Icons.sort),
-                        itemBuilder: (_) => ['Título A–Z', 'Recentes', 'Manual']
-                            .map(
-                              (v) => CheckedPopupMenuItem(
-                                value: v,
-                                checked: order == v,
-                                child: Text(v),
-                              ),
-                            )
-                            .toList(),
+                        itemBuilder: (_) =>
+                            [
+                                  'Título A–Z',
+                                  'Gênero',
+                                  'Console',
+                                  'Recentes',
+                                  'Manual',
+                                ]
+                                .map(
+                                  (v) => CheckedPopupMenuItem(
+                                    value: v,
+                                    checked: order == v,
+                                    child: Text(v),
+                                  ),
+                                )
+                                .toList(),
                       ),
                       IconButton(
-                        tooltip: shelf ? 'Ver em grade' : 'Ver em estante',
-                        onPressed: () => setState(() => shelf = !shelf),
-                        icon: Icon(
-                          shelf ? Icons.grid_view_rounded : Icons.shelves,
-                        ),
+                        tooltip: viewMode == 'grade'
+                            ? 'Ver em estante'
+                            : viewMode == 'estante'
+                            ? 'Ver capa frontal'
+                            : 'Ver em grade',
+                        onPressed: () {
+                          changeView(
+                            viewMode == 'grade'
+                                ? 'estante'
+                                : viewMode == 'estante'
+                                ? 'frontal'
+                                : 'grade',
+                          );
+                        },
+                        icon: Icon(switch (viewMode) {
+                          'estante' => Icons.shelves,
+                          'frontal' => Icons.library_books_rounded,
+                          _ => Icons.grid_view_rounded,
+                        }),
                       ),
                     ],
                   ),
@@ -466,9 +848,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     )
                   : LayoutBuilder(
                       builder: (context, constraints) {
-                        if (shelf) {
+                        final isShelf = viewMode == 'estante';
+                        final isFront = viewMode == 'frontal';
+                        if (isShelf) {
                           return BookShelf(
                             games: games,
+                            onPlatforms: editPlatforms,
+                            onReorder: (moving, target) =>
+                                reorder(moving, target, games),
                             store: widget.store,
                             onOpen: (game) => Navigator.push(
                               context,
@@ -476,74 +863,150 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                 builder: (_) => GameDetail(
                                   store: widget.store,
                                   id: game.id,
+                                  preferredPlatform:
+                                      Game.platforms.contains(platform)
+                                      ? platform
+                                      : null,
                                 ),
                               ),
                             ),
                           );
                         }
                         final columns =
-                            (constraints.maxWidth / (shelf ? 130 : 185))
+                            (constraints.maxWidth / (isFront ? 135 : 185))
                                 .floor()
                                 .clamp(2, 7);
+                        if (isFront) {
+                          return GridView.builder(
+                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: columns,
+                                  crossAxisSpacing: 14,
+                                  mainAxisSpacing: 18,
+                                  childAspectRatio: .72,
+                                ),
+                            itemCount: games.length,
+                            itemBuilder: (context, index) {
+                              final game = games[index];
+                              return draggable(
+                                game,
+                                games,
+                                InkWell(
+                                  borderRadius: BorderRadius.circular(14),
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => GameDetail(
+                                        store: widget.store,
+                                        id: game.id,
+                                        preferredPlatform:
+                                            Game.platforms.contains(platform)
+                                            ? platform
+                                            : null,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Card(
+                                    color: Cyber.panel,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(10),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(
+                                            child: ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                              child: Cover(
+                                                game: game,
+                                                store: widget.store,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            game.title,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            game.platformLabel,
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              color: Cyber.muted,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        }
                         return GridView.builder(
                           padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
                           gridDelegate:
                               SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: columns,
                                 crossAxisSpacing: 14,
-                                mainAxisSpacing: shelf ? 6 : 18,
-                                childAspectRatio: shelf ? .52 : .60,
+                                mainAxisSpacing: 18,
+                                childAspectRatio: .60,
                               ),
                           itemCount: games.length,
                           itemBuilder: (context, index) {
                             final game = games[index];
-                            return InkWell(
-                              borderRadius: BorderRadius.circular(10),
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => GameDetail(
-                                    store: widget.store,
-                                    id: game.id,
+                            return draggable(
+                              game,
+                              games,
+                              InkWell(
+                                borderRadius: BorderRadius.circular(10),
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => GameDetail(
+                                      store: widget.store,
+                                      id: game.id,
+                                      preferredPlatform:
+                                          Game.platforms.contains(platform)
+                                          ? platform
+                                          : null,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: Cover(
-                                      game: game,
-                                      store: widget.store,
-                                    ),
-                                  ),
-                                  if (shelf)
-                                    Container(
-                                      height: 7,
-                                      decoration: const BoxDecoration(
-                                        gradient: LinearGradient(
-                                          colors: [
-                                            Color(0xff21434c),
-                                            Color(0xff583044),
-                                          ],
-                                        ),
-                                        borderRadius: BorderRadius.vertical(
-                                          bottom: Radius.circular(3),
-                                        ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: Cover(
+                                        game: game,
+                                        store: widget.store,
                                       ),
                                     ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    game.title,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      game.title,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                ],
+                                    const SizedBox(height: 4),
+                                  ],
+                                ),
                               ),
                             );
                           },

@@ -11,10 +11,14 @@ class BookShelf extends StatelessWidget {
     required this.games,
     required this.store,
     required this.onOpen,
+    this.onPlatforms,
+    this.onReorder,
   });
   final List<Game> games;
   final CollectionStore store;
   final ValueChanged<Game> onOpen;
+  final ValueChanged<Game>? onPlatforms;
+  final void Function(Game, Game)? onReorder;
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
@@ -47,10 +51,40 @@ class BookShelf extends StatelessWidget {
                   for (final game in games.skip(row * columns).take(columns))
                     Padding(
                       padding: const EdgeInsets.only(right: 4),
-                      child: _Spine(
-                        game: game,
-                        store: store,
-                        onTap: () => onOpen(game),
+                      child: DragTarget<Game>(
+                        onWillAcceptWithDetails: (d) =>
+                            d.data.id != game.id && onReorder != null,
+                        onAcceptWithDetails: (d) =>
+                            onReorder?.call(d.data, game),
+                        builder: (context, candidates, rejected) =>
+                            LongPressDraggable<Game>(
+                              key: ValueKey('shelf-${game.id}'),
+                              data: game,
+                              feedback: Material(
+                                color: Colors.transparent,
+                                child: _Spine(
+                                  game: game,
+                                  store: store,
+                                  onTap: () {},
+                                ),
+                              ),
+                              childWhenDragging: Opacity(
+                                opacity: .3,
+                                child: _Spine(
+                                  game: game,
+                                  store: store,
+                                  onTap: () {},
+                                ),
+                              ),
+                              child: _Spine(
+                                game: game,
+                                store: store,
+                                onTap: () => onOpen(game),
+                                onPlatforms: onPlatforms == null
+                                    ? null
+                                    : () => onPlatforms!(game),
+                              ),
+                            ),
                       ),
                     ),
                 ],
@@ -86,10 +120,16 @@ class BookShelf extends StatelessWidget {
 }
 
 class _Spine extends StatelessWidget {
-  const _Spine({required this.game, required this.store, required this.onTap});
+  const _Spine({
+    required this.game,
+    required this.store,
+    required this.onTap,
+    this.onPlatforms,
+  });
   final Game game;
   final CollectionStore store;
   final VoidCallback onTap;
+  final VoidCallback? onPlatforms;
   @override
   Widget build(BuildContext context) {
     final profile = CaseProfile.forPlatform(game.platform);
@@ -100,9 +140,10 @@ class _Spine extends StatelessWidget {
         : 212.0;
     return Semantics(
       button: true,
-      label: '${game.title}, ${game.platform}',
+      label: '${game.title}, ${game.platformLabel}',
       child: Tooltip(
         message: game.title,
+        triggerMode: TooltipTriggerMode.manual,
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -143,7 +184,7 @@ class _Spine extends StatelessWidget {
                         color: profile.brand,
                         alignment: Alignment.center,
                         child: Text(
-                          game.platform,
+                          game.platform.isEmpty ? '?' : game.platform,
                           style: TextStyle(
                             fontSize: 9,
                             fontWeight: FontWeight.w800,
@@ -184,7 +225,29 @@ class _Spine extends StatelessWidget {
                             ? Colors.lightBlueAccent
                             : Colors.white70,
                       ),
-                      const SizedBox(height: 10),
+                      if (onPlatforms != null)
+                        SizedBox(
+                          width: 32,
+                          height: 28,
+                          child: PopupMenuButton<String>(
+                            tooltip: 'Opções de ${game.title}',
+                            padding: EdgeInsets.zero,
+                            iconSize: 16,
+                            icon: const Icon(
+                              Icons.more_horiz,
+                              color: Colors.white,
+                            ),
+                            onSelected: (_) => onPlatforms!(),
+                            itemBuilder: (_) => const [
+                              PopupMenuItem(
+                                value: 'platforms',
+                                child: Text('Plataformas'),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        const SizedBox(height: 10),
                     ],
                   ),
                   Positioned.fill(

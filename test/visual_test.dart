@@ -120,6 +120,28 @@ void main() {
         final image = await boundary.toImage();
         final data = await image.toByteData(format: ui.ImageByteFormat.png);
         await File('docs/$name.png').writeAsBytes(data!.buffer.asUint8List());
+        if (name == 'borda-direita' || name == 'borda-cima') {
+          final raw = await image.toByteData(
+            format: ui.ImageByteFormat.rawRgba,
+          );
+          final point = name == 'borda-direita'
+              ? const Offset(281, 500)
+              : const Offset(240, 570);
+          for (var dy = -2; dy <= 2; dy++) {
+            for (var dx = -2; dx <= 2; dx++) {
+              final index =
+                  ((point.dy.toInt() + dy) * image.width +
+                      point.dx.toInt() +
+                      dx) *
+                  4;
+              expect(
+                raw!.getUint8(index + 2),
+                greaterThan(90),
+                reason: '$name: the exterior wall must cover the dark interior',
+              );
+            }
+          }
+        }
         image.dispose();
       });
     }
@@ -286,6 +308,19 @@ void main() {
         reason: '$platform printed spine must exist',
       );
       await capture('lombada-${platform.toLowerCase()}');
+      if (platform == 'PS4') {
+        for (final pose in [
+          ('direita', -1.4, -.1),
+          ('esquerda', 1.4, -.1),
+          ('cima', .1, -1.3),
+          ('baixo', .1, 1.3),
+          ('diagonal', -1.1, -.5),
+        ]) {
+          state.view(pose.$2, tilt: pose.$3);
+          await tester.pump();
+          await capture('borda-${pose.$1}');
+        }
+      }
     }
     final stickers = store.games[2].copy()
       ..finished = true

@@ -1,3 +1,4 @@
+import '../widgets/platform_picker.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/game.dart';
@@ -177,13 +178,9 @@ class _GameEditorState extends State<GameEditor> {
           padding: const EdgeInsets.all(20),
           children: [
             input('title', 'Nome do jogo *'),
-            DropdownButtonFormField<String>(
-              initialValue: game.platform,
-              decoration: const InputDecoration(labelText: 'Plataforma'),
-              items: Game.platforms
-                  .map((p) => DropdownMenuItem(value: p, child: Text(p)))
-                  .toList(),
-              onChanged: (p) => setState(() => game.platform = p!),
+            PlatformPicker(
+              values: game.assignedPlatforms,
+              onChanged: (p) => setState(() => game.assignedPlatforms = p),
             ),
             const SizedBox(height: 20),
             imageField('front', 'Capa', game.front),

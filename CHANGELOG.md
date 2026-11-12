@@ -1,3 +1,51 @@
+## 0.13.3+16
+
+- Catálogo atualizado para 279 jogos e 279 capas, com descrições revisadas.
+- Reconhecimento de jogos já importados mesmo quando a descrição mudou, preservando os cadastros existentes.
+
+## 0.13.2+15
+
+- Exportação do backup com escolha de pasta e nome no seletor Android.
+- Geração do JSON em partes e limpeza dos arquivos temporários.
+- Restauração valida imagens e preserva os dados existentes em caso de erro.
+- Nova arte com ícone adaptável para os formatos usados pelos celulares Android.
+
+## 0.13.1+14
+
+- Ícone do aplicativo atualizado com a imagem fornecida.
+
+## 0.13.0+13
+
+- Banco SQLite no Android com migração dos dados anteriores preservados.
+- Backup JSON com imagens em Downloads e restauração no aplicativo.
+- Cinco filtros de gênero, progresso, ordenação e arrastar capas ou lombadas.
+- Visualização de grade, estante ou capa frontal persistente.
+- Pré-visualização sem extração em disco; somente capas selecionadas são extraídas do ZIP.
+
+- Seleção individual e importação dos jogos marcados ou de todos os jogos disponíveis.
+- Jogos já identificados na biblioteca são sinalizados e não são importados novamente.
+- Importação em segundo plano com progresso na biblioteca e notificação Android.
+- Registro de progresso para retomar ao reabrir caso o processo seja interrompido.
+- Lote salvo atomicamente, com prevenção de duplicatas após uma interrupção.
+
+## 0.12.0+12
+
+- Importação local de Excel .xlsx e ZIP com vinculação automática das capas.
+- Revisão antes de salvar, busca, escolha de imagem e seleção de jogos em lote.
+- Plataformas sempre vazias no novo importador, com opção de atribuir uma ou várias manualmente.
+- Categoria Sem plataforma definida e filtros compatíveis com múltiplas coleções.
+- Alteração de plataformas ao segurar a capa/lombada ou pelo editor.
+- Visualização da case de cada plataforma atribuída, com um único cadastro e progresso compartilhado.
+- Arquivos da pasta jogos disponíveis no APK, além de seletores de arquivos/pasta no celular.
+- Compatibilidade com dados, imagens e backups existentes; funcionamento 100% offline.
+
+## 0.11.0+11
+
+- Corrigida a aparência de bordas abertas nas laterais, topo e base da case GLB.
+- Superfícies internas deixam de sobrepor as paredes quando a tampa está fechada.
+- Orientação das faces sólidas respeitada, com interior e CD disponíveis ao abrir.
+- Adicionadas verificações das bordas da malha e capturas de cinco ângulos.
+
 ## 0.10.0+10
 
 - Case GLB atualizada com a revisão do proprietário (1.236 triângulos).

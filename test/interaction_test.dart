@@ -19,6 +19,7 @@ void main() {
     await store.load();
   });
   tearDown(() async {
+    await Future<void>.delayed(const Duration(milliseconds: 200));
     await directory.delete(recursive: true);
   });
 
@@ -168,7 +169,10 @@ void main() {
         await tester.pumpWidget(AcervoApp(store: store));
       });
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Ver em estante'));
+      await tester.runAsync(() async {
+        await tester.tap(find.byTooltip('Ver em estante'));
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      });
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('book-shelves')), findsOneWidget);
       await tester.scrollUntilVisible(

@@ -7,11 +7,13 @@ Aplicativo Flutter/Dart seguindo a abordagem do Walken (pasta wlak), com armazen
 O arquivo Biblioteca.apk, na raiz deste projeto, é o instalador Android. Copie para o celular, abra e autorize a instalação por essa origem quando o Android solicitar. A biblioteca começa vazia e oferece escolher uma pasta de capas na primeira abertura. Você pode pular essa etapa e usar o app imediatamente, sem conta ou login.
 
 1. Toque em Novo jogo.
-2. Preencha o título, selecione a plataforma e escolha suas imagens.
+2. Preencha o título, selecione uma ou mais plataformas e escolha suas imagens.
 3. Salve e toque na capa para abrir o visualizador.
 4. Arraste com um dedo para girar; use dois dedos para zoom.
 5. Abra a caixa e retire o disco. Toque na mídia para retirá-la, arraste para girá-la e toque novamente para guardá-la.
 6. Use os controles circulares no canto para Zerado, Platina, 100% e Favorito. Os estados aparecem como adesivos nos cantos da capa. O formulário de capas não contém opções de progresso.
+
+O menu superior também oferece Importar Excel + ZIP, com revisão em lote e seleção manual das plataformas. A opção Carregar pasta jogos usa os arquivos incluídos no APK.
 
 O menu superior permite configurar a pasta de capas, localizar fotos novas nela e importar várias capas ou as imagens diretamente contidas em uma pasta, exportar backup e restaurar backup. A importação em lote apresenta um formulário para cada imagem; voltar interrompe o restante do lote.
 
@@ -23,10 +25,10 @@ O menu superior permite configurar a pasta de capas, localizar fotos novas nela 
 - Frente, verso, lombada, restauração da câmera, abertura/fechamento e retirada/devolução do disco.
 - Modo Steam com arte ampliável ou caixa virtual.
 - Cadastro, edição, duplicação, exclusão e reorganização manual.
-- Pesquisa, filtros por plataforma/progresso/favoritos e ordenação por título, data ou posição manual.
-- Grade de capas ou estante com lombadas verticais clicáveis, prateleiras contínuas e rolagem para toda a coleção.
+- Pesquisa, cinco gêneros mais comuns, filtros de plataforma e progresso, e ordenação por título, console, gênero, data ou posição manual.
+- Grade, capa frontal e estante: a visualização escolhida é lembrada; segure e arraste uma capa ou lombada para organizar. O menu de cada jogo altera suas plataformas.
 - Contracapa composta localmente a partir da capa e dos dados cadastrados, sem consultar ou inventar informações.
-- Persistência JSON com gravação temporária e cópia anterior para recuperação.
+- Persistência SQLite transacional no Android; dados JSON de versões anteriores são migrados mantendo o arquivo original.
 - Imagens copiadas para armazenamento privado; limite de 1536 pixels no maior lado e miniaturas com 240 pixels de largura.
 - Backup JSON único com imagens embutidas em base64, restaurável em outra instalação.
 
@@ -51,11 +53,11 @@ As telas são widgets Flutter. O visualizador monta uma árvore Column → Gestu
 
 ## Dados e permissões
 
-Os dados ficam no diretório privado de suporte do aplicativo: collection.json e media/. Os caminhos de mídia são relativos, permitindo restaurar em outro aparelho.
+No Android, os cadastros ficam no banco SQLite privado biblioteca.db e as imagens em media/. O arquivo collection.json das versões anteriores é migrado e preservado. Os caminhos de mídia são relativos, permitindo restaurar em outro aparelho.
 
 A ponte Kotlin usa o Storage Access Framework: ACTION_OPEN_DOCUMENT, ACTION_OPEN_DOCUMENT_TREE e ACTION_CREATE_DOCUMENT. O usuário escolhe os arquivos ou a pasta no seletor do Android. Não são solicitadas permissões amplas de armazenamento. O trabalho de leitura e cópia nativo é feito fora da thread da interface.
 
-Salve o backup em um local externo ao aplicativo, como Documentos. Desinstalar o aplicativo remove sua coleção privada; o arquivo exportado permite recuperá-la. Restaurar substitui a coleção atual, após confirmação. Backups inválidos ou incompletos não substituem os dados ativos.
+Para exportar o backup JSON, escolha a pasta e o nome no seletor do Android. O arquivo inclui imagens, jogos, plataformas, progresso e preferências; sua geração usa processamento em partes para limitar o uso de memória. Desinstalar o aplicativo remove sua coleção privada; o arquivo exportado permite recuperá-la. Restaurar substitui a coleção atual, após confirmação. Backups inválidos ou incompletos não substituem os dados ativos.
 
 ## Compilar e testar
 
@@ -79,7 +81,7 @@ O APK desta versão usa assinatura de desenvolvimento, como o projeto Walken. Pa
 - A estante organiza capas com prateleiras; não é um ambiente 3D navegável.
 - A busca da pasta de capas percorre subpastas em até oito níveis e reconhece a plataforma pelos nomes ps1, ps2, ps3, ps4, ps5, Steam e android.
 - A geração de contracapa resume visualmente textos muito longos; o cadastro preserva o texto completo.
-- Backups com muitas imagens podem ficar grandes e usam memória ao gerar/restaurar. Não há coleta automática de imagens sem referências.
+- Backups com muitas imagens podem ficar grandes; a restauração ainda carrega o JSON em memória. Não há coleta automática de imagens sem referências.
 - O APK foi compilado e os testes Flutter foram executados no computador. O fluxo nativo de arquivos e o desempenho dos gestos ainda precisam de validação em celular: não havia aparelho conectado ou emulador disponível.
 
 Para novas plataformas, acrescente o identificador em Game.platforms, a cor em platformColor e as dimensões/identificação no visualizador. Modelos e texturas continuam compartilhados entre todos os jogos.
@@ -182,3 +184,43 @@ Android passa a usar a mesma case GLB com CD de Steam, com proporções de estoj
 Atualizado o asset `modelos/case.glb` com a revisão do proprietário, de 68.612 bytes e 1.236 triângulos, mantendo base, tampa, CD e suporte independentes. SHA-256 da revisão: 98A0B54823D27C06106CE8B91E3B5C0298963360968354FA964B0D27C572ECD6. O arquivo fornecido não foi alterado.
 
 O encaixe agora calcula os limites reais da case e das peças, em vez de usar as medidas fixas da primeira exportação. A normalização mantém as proporções de cada plataforma e o alinhamento das superfícies de impressão, da dobradiça, do CD e do suporte com a malha revisada. Os nomes e eixos das quatro peças continuam seguindo o modelo fornecido. Aplicado a Steam, Android, PS2, PS3 e PS4.
+
+## Bordas fechadas — versão 0.11.0
+
+Corrigida a sobreposição das superfícies internas nas paredes externas durante o giro da case GLB. Com a tampa fechada, os painéis internos, o CD e o suporte deixam de participar do desenho; as faces sólidas da malha usam sua orientação externa para eliminar a aparência de fendas. Ao abrir, o interior e a mídia voltam a ser desenhados. O GLB original não foi alterado.
+
+A conferência visual cobre as laterais direita/esquerda, topo, base e diagonal. Testes verificam a ausência de bordas abertas nas duas metades do GLB e a cor da parede externa nas regiões em que o interior escuro aparecia.
+
+## Importação Excel + ZIP — versão 0.12.0
+
+A pasta `jogos/` contém `Catalogo_de_254_jogos.xlsx` e `Imagens_dos_jogos_renomeadas.zip`. Os originais são somente lidos. Não é preciso editar a planilha, descompactar o ZIP ou organizar subpastas por plataforma.
+
+1. Abra o menu ⋮ e escolha **Importar Excel + ZIP**.
+2. Use **Carregar pasta jogos** para os arquivos atuais deste projeto. Também é possível escolher Excel e ZIP pelo seletor do Android, ou escolher uma pasta no celular que contenha uma planilha e um ZIP.
+3. Confira a lista de jogos e capas. Toque na plataforma de uma linha para marcar uma ou várias opções. Todas começam em **Sem plataforma definida**, independentemente dos nomes das pastas ou de qualquer plataforma mencionada na planilha.
+4. Marque os jogos pelas caixas de seleção ou selecione todos os visíveis; use **Atribuir plataforma aos selecionados**. Essa ação substitui a seleção anterior pelo conjunto escolhido, inclusive um conjunto vazio. A busca permite aplicar a organização apenas aos resultados visíveis.
+5. Toque na capa para corrigir o vínculo usando as imagens do ZIP ou uma imagem local. O menu da linha permite conferir os dados e remover um jogo do lote.
+6. Marque as caixas dos jogos desejados e toque em **Importar selecionados**, ou toque em **Importar todos** para importar todos os jogos ainda disponíveis no catálogo. Jogos sem plataforma ficam na categoria **Sem plataforma definida**. Sair da revisão sem iniciar a importação não cadastra o lote.
+7. Na biblioteca, segure a capa ou a lombada para alterar as plataformas. A tela Editar também permite isso.
+
+O mesmo jogo aparece em cada coleção selecionada e permanece um único cadastro, com imagens, dados e progresso compartilhados. A biblioteca geral conta esse jogo uma vez. O visualizador permite escolher a case das plataformas atribuídas. PS5 foi preservado junto às seis opções solicitadas para manter a funcionalidade existente. Backups e cadastros antigos continuam sendo lidos; backups novos incluem as plataformas adicionais.
+
+Leitura local de `.xlsx`: encontra o cabeçalho mesmo depois de um título/resumo e lê células esparsas, textos compartilhados, textos diretos e resultados de fórmulas já salvos pelo Excel. Importa nome, descrição, gênero, ano, classificação e jogadores; não calcula fórmulas nem abre links da planilha. O formato antigo `.xls` não é suportado por este importador.
+
+A vinculação prioriza a coluna de imagem, quando disponível, e depois o nome do jogo, ignorando diferenças de caixa, acentos e pontuação. Vínculos ambíguos ficam sem capa para decisão manual. Nenhum título repetido é fundido automaticamente. A importação acrescenta os jogos após a revisão e não substitui a coleção atual. Os dados são gravados em lote depois de preparar as imagens.
+
+As imagens ZIP são extraídas para nomes internos, sem usar os caminhos do arquivo como destino. A leitura roda em isolate e limita quantidade e tamanho dos arquivos. As capas usam a mesma normalização e as miniaturas já existentes no projeto. Dependências: [archive](https://pub.dev/packages/archive) e [xml](https://pub.dev/packages/xml), com versões fixadas em `pubspec.lock`. O app continua sem permissão de internet.
+
+**Atualizar os arquivos:** a pasta `jogos/` é incluída no APK durante a compilação. Trocar os arquivos no computador não altera um APK já instalado. Nesse caso, gere outro APK ou transfira os arquivos para o celular e use o seletor. Se houver mais de uma planilha ou mais de um ZIP, selecione manualmente o par desejado.
+
+Validação dos arquivos fornecidos: 254 linhas, 254 capas vinculadas, todos os seis campos preenchidos e nenhuma plataforma automática. O relatório está em `docs/import-validation.json`. Foi testada também a conversão das 254 imagens para o armazenamento da biblioteca e o salvamento único do lote preservando jogos existentes. Capturas da revisão: `docs/importacao-revisao.png`, `docs/importacao-plataformas.png` e `docs/importacao-lote.png`.
+
+## Seleção e segundo plano — versão 0.13.0
+
+Na revisão, marque apenas os jogos desejados e use **Importar selecionados**. Use **Importar todos** para os jogos disponíveis no catálogo inteiro, inclusive os que estiverem fora do filtro de busca. A caixa superior seleciona apenas os jogos visíveis. Jogos já identificados na biblioteca são sinalizados e ficam fora de novas importações. As plataformas continuam sendo escolhidas manualmente, individualmente ou em lote.
+
+Ao iniciar a importação, a tela retorna para a biblioteca, onde o progresso permanece visível. O Android executa um serviço em primeiro plano para manter o processamento quando o app vai para segundo plano. Há uma notificação de progresso; no Android 13 ou superior, ela aparece na área de notificações se a permissão for concedida. A negação da permissão não impede o serviço.
+
+O andamento é salvo em armazenamento privado após cada jogo. Se o Android encerrar o processo ou o mecanismo do aplicativo, a tarefa interrompida é retomada ao abrir a Biblioteca novamente. Caso uma imagem falhe, a biblioteca mostra as opções de retomar ou cancelar. Não há comunicação de rede. As permissões adicionadas são as do serviço de importação, prevenção temporária de suspensão e notificações. Referência: [serviços em primeiro plano no Android](https://developer.android.com/develop/background-work/services/fgs) e [permissão de notificação](https://developer.android.com/develop/ui/compose/notifications/notification-permission).
+
+O lote só é adicionado à coleção quando todas as capas escolhidas tiverem sido preparadas; os jogos já existentes são preservados. Ao retomar depois de um salvamento concluído, os identificadores impedem que os mesmos jogos sejam adicionados duas vezes. O app identifica os itens da mesma planilha por um identificador estável. Cadastros de planilhas anteriores também são reconhecidos quando os dados importados continuam correspondendo; se esses dados foram alterados, confira a revisão antes de importar novamente.

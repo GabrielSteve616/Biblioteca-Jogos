@@ -77,13 +77,22 @@ class CaseProfile {
       corner: .055,
     ),
     // Android uses the same virtual DVD case format as Steam.
-    _ => const CaseProfile(
+    'Android' => const CaseProfile(
       135,
       190,
       14,
       Color(0xff25333f),
       Color(0xff18232e),
       Color(0xff71eeef),
+      corner: .055,
+    ),
+    _ => const CaseProfile(
+      135,
+      190,
+      14,
+      Color(0xff394451),
+      Color(0xff232e3a),
+      Colors.white,
       corner: .055,
     ),
   };

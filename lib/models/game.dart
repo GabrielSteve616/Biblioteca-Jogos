@@ -3,6 +3,7 @@ class Game {
     required this.id,
     required this.title,
     this.platform = 'PS4',
+    List<String>? additionalPlatforms,
     this.front = '',
     this.sourceId = '',
     this.back = '',
@@ -18,7 +19,8 @@ class Game {
     this.complete = false,
     this.favorite = false,
     DateTime? created,
-  }) : created = created ?? DateTime.now();
+  }) : additionalPlatforms = additionalPlatforms ?? [],
+       created = created ?? DateTime.now();
 
   static const platforms = [
     'PS1',
@@ -29,6 +31,21 @@ class Game {
     'Steam',
     'Android',
   ];
+  static const unassigned = 'Sem plataforma definida';
+  List<String> additionalPlatforms;
+  List<String> get assignedPlatforms =>
+      {if (platform.isNotEmpty) platform, ...additionalPlatforms}.toList();
+  set assignedPlatforms(Iterable<String> values) {
+    final next = values.toSet().toList();
+    if (next.any((p) => !platforms.contains(p))) {
+      throw const FormatException('Plataforma inválida.');
+    }
+    platform = next.isEmpty ? '' : next.first;
+    additionalPlatforms = next.skip(1).toList();
+  }
+
+  String get platformLabel =>
+      assignedPlatforms.isEmpty ? unassigned : assignedPlatforms.join(' • ');
   String id, title, platform, front, back, disc, sourceId;
   String description, genre, year, rating, players, notes;
   bool finished, platinum, complete, favorite;
@@ -40,6 +57,7 @@ class Game {
     'id': id,
     'title': title,
     'platform': platform,
+    'additionalPlatforms': additionalPlatforms,
     'front': front,
     'sourceId': sourceId,
     'back': back,
@@ -73,13 +91,24 @@ class Game {
     final platform = text('platform', 'PS4');
     final id = text('id');
     final title = text('title');
-    if (!platforms.contains(platform) || id.isEmpty || title.trim().isEmpty) {
+    final extra = j['additionalPlatforms'] ?? <String>[];
+    if (extra is! List ||
+        extra.any((p) => p is! String || !platforms.contains(p)) ||
+        extra.toSet().length != extra.length ||
+        extra.contains(platform) ||
+        (platform.isEmpty && extra.isNotEmpty)) {
+      throw const FormatException('Coleções inválidas.');
+    }
+    if ((platform.isNotEmpty && !platforms.contains(platform)) ||
+        id.isEmpty ||
+        title.trim().isEmpty) {
       throw const FormatException('Jogo inválido no arquivo.');
     }
     return Game(
       id: id,
       title: title,
       platform: platform,
+      additionalPlatforms: List<String>.from(extra),
       front: text('front'),
       sourceId: text('sourceId'),
       back: text('back'),

@@ -8,15 +8,22 @@ import 'game_editor.dart';
 import '../widgets/progress_stickers.dart';
 
 class GameDetail extends StatefulWidget {
-  const GameDetail({super.key, required this.store, required this.id});
+  const GameDetail({
+    super.key,
+    required this.store,
+    required this.id,
+    this.preferredPlatform,
+  });
   final CollectionStore store;
   final String id;
+  final String? preferredPlatform;
   @override
   State<GameDetail> createState() => _GameDetailState();
 }
 
 class _GameDetailState extends State<GameDetail> {
   bool busy = false, artOnly = false;
+  String? viewPlatform;
   void error(Object e) {
     if (mounted) {
       ScaffoldMessenger.of(
@@ -47,6 +54,12 @@ class _GameDetailState extends State<GameDetail> {
         return const Scaffold(body: Center(child: Text('Jogo excluído.')));
       }
       final g = found.first;
+      final desired = viewPlatform ?? widget.preferredPlatform;
+      final current = g.assignedPlatforms.contains(desired)
+          ? desired!
+          : g.platform;
+      final display = g.copy()
+        ..assignedPlatforms = current.isEmpty ? [] : [current];
       return Scaffold(
         appBar: AppBar(
           title: Text(g.title),
@@ -75,7 +88,7 @@ class _GameDetailState extends State<GameDetail> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      g.platform,
+                      g.platformLabel,
                       style: const TextStyle(
                         color: Color(0xff7ab9ff),
                         fontWeight: FontWeight.w700,
@@ -83,7 +96,22 @@ class _GameDetailState extends State<GameDetail> {
                     ),
                     const SizedBox(height: 8),
 
-                    if (g.platform == 'Steam')
+                    if (g.assignedPlatforms.length > 1)
+                      Wrap(
+                        spacing: 6,
+                        children: [
+                          for (final p in g.assignedPlatforms)
+                            ChoiceChip(
+                              label: Text(p),
+                              selected: current == p,
+                              onSelected: (_) => setState(() {
+                                viewPlatform = p;
+                                artOnly = false;
+                              }),
+                            ),
+                        ],
+                      ),
+                    if (current == 'Steam')
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         title: const Icon(
@@ -117,9 +145,9 @@ class _GameDetailState extends State<GameDetail> {
                                       ))
                               : GameBox3D(
                                   key: ValueKey(
-                                    '${g.id}-${g.front}-${g.back}-${g.disc}-${g.title}-${g.description}-${g.genre}-${g.year}-${g.rating}-${g.players}-${g.platform}',
+                                    '${g.id}-${g.front}-${g.back}-${g.disc}-${g.title}-${g.description}-${g.genre}-${g.year}-${g.rating}-${g.players}-$current',
                                   ),
-                                  game: g,
+                                  game: display,
                                   store: widget.store,
                                 ),
                           Positioned(

@@ -36,12 +36,14 @@ class Cover extends StatelessWidget {
             color: Cyber.cyan,
           ),
           const SizedBox(height: 12),
-          Text(
-            game.title.isEmpty ? 'Sua próxima história' : game.title,
-            textAlign: TextAlign.center,
-            maxLines: 4,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w700),
+          Flexible(
+            child: Text(
+              game.title.isEmpty ? 'Sua próxima história' : game.title,
+              textAlign: TextAlign.center,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
           ),
         ],
       ),
@@ -72,7 +74,9 @@ class Cover extends StatelessWidget {
               ),
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Text(
-                game.platform,
+                game.platformLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontSize: 11,

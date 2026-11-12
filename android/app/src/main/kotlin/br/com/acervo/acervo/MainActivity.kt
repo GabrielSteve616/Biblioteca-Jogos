@@ -1,7 +1,13 @@
 package br.com.acervo.acervo
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
+import android.os.Build
 import android.content.Intent
+import android.content.ContentValues
+import org.json.JSONArray
+import org.json.JSONObject
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
@@ -15,7 +21,7 @@ import java.util.Locale
 class MainActivity : FlutterActivity() {
     private var pending: MethodChannel.Result? = null
     private var operation = ""
-    private var backupData: String? = null
+    private var backupPath: String? = null
     private var createFolders = false
     private val folderNames = listOf("ps1", "ps2", "ps3", "ps4", "ps5", "Steam", "android")
     private val preferences by lazy { getSharedPreferences("acervo_folders", MODE_PRIVATE) }
@@ -24,6 +30,67 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "acervo/documents")
             .setMethodCallHandler { call, result ->
+                if (call.method == "readCollectionSqlite" || call.method == "writeCollectionSqlite") {
+                    val payload = call.argument<String>("data")
+                    background(result) {
+                        val db = openOrCreateDatabase("biblioteca.db", MODE_PRIVATE, null)
+                        try {
+                            db.execSQL("CREATE TABLE IF NOT EXISTS games (id TEXT PRIMARY KEY, position INTEGER NOT NULL, data TEXT NOT NULL)")
+                            db.execSQL("CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+                            if (call.method == "writeCollectionSqlite") {
+                                val games = JSONObject(payload ?: error("Coleção vazia")).getJSONArray("games")
+                                db.beginTransaction()
+                                try {
+                                    db.delete("games", null, null)
+                                    for (i in 0 until games.length()) {
+                                        val game = games.getJSONObject(i)
+                                        val values = ContentValues().apply {
+                                            put("id", game.getString("id"))
+                                            put("position", i)
+                                            put("data", game.toString())
+                                        }
+                                        db.insertOrThrow("games", null, values)
+                                    }
+                                    db.execSQL("INSERT OR REPLACE INTO metadata (key,value) VALUES ('initialized','1')")
+                                    db.setTransactionSuccessful()
+                                } finally { db.endTransaction() }
+                                null
+                            } else {
+                                val initialized = db.rawQuery("SELECT value FROM metadata WHERE key='initialized'", null).use { it.moveToFirst() }
+                                if (!initialized) null else {
+                                    val games = JSONArray()
+                                    db.rawQuery("SELECT data FROM games ORDER BY position", null).use { cursor ->
+                                        while (cursor.moveToNext()) games.put(JSONObject(cursor.getString(0)))
+                                    }
+                                    JSONObject().put("version", 1).put("games", games).toString()
+                                }
+                            }
+                        } finally { db.close() }
+                    }
+                    return@setMethodCallHandler
+                }
+                if (call.method in listOf("beginImportService", "updateImportService", "finishImportService")) {
+                    try {
+                        val service = Intent(this, ImportForegroundService::class.java).apply {
+                            action = when (call.method) {
+                                "beginImportService" -> "start"
+                                "updateImportService" -> "update"
+                                else -> "finish"
+                            }
+                            putExtra("done", call.argument<Int>("done") ?: 0)
+                            putExtra("total", call.argument<Int>("total") ?: 0)
+                            putExtra("success", call.argument<Boolean>("success") == true)
+                        }
+                        if (call.method == "beginImportService" && Build.VERSION.SDK_INT >= 26) startForegroundService(service)
+                        else startService(service)
+                        if (call.method == "beginImportService" && Build.VERSION.SDK_INT >= 33 &&
+                            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                            try { requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 5502) } catch (_: Exception) { /* Import still works without a visible drawer notification. */ }
+                        }
+                        result.success(null)
+                    } catch (error: Exception) { result.error("foreground_service", error.message, null) }
+                    return@setMethodCallHandler
+                }
                 if (pending != null) {
                     result.error("busy", "Já há uma seleção aberta.", null)
                     return@setMethodCallHandler
@@ -39,6 +106,14 @@ class MainActivity : FlutterActivity() {
                     return@setMethodCallHandler
                 }
                 val intent = when (call.method) {
+                    "catalogFiles" -> Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        type = "*/*"
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    }
+                    "catalogFolder" -> Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
                     "images" -> Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                         type = "image/*"
                         addCategory(Intent.CATEGORY_OPENABLE)
@@ -60,7 +135,7 @@ class MainActivity : FlutterActivity() {
                         type = "application/json"
                         addCategory(Intent.CATEGORY_OPENABLE)
                         putExtra(Intent.EXTRA_TITLE, "Biblioteca-backup.json")
-                        backupData = call.argument<String>("data")
+                        backupPath = call.argument<String>("path")
                     }
                     else -> null
                 }
@@ -73,6 +148,7 @@ class MainActivity : FlutterActivity() {
                         startActivityForResult(intent, 5501)
                     } catch (error: Exception) {
                         pending = null
+                        backupPath = null
                         result.error("picker", error.message, null)
                     }
                 }
@@ -103,22 +179,22 @@ class MainActivity : FlutterActivity() {
                 "openBackup", "configureFolder" -> null
                 else -> emptyList<String>()
             })
-            backupData = null
+            backupPath = null
             return
         }
         val uri = data.data
-        val payload = backupData
-        backupData = null
+        val payload = backupPath
+        backupPath = null
         val organize = createFolders
         background(callback) {
             when (action) {
                 "saveBackup" -> {
                     contentResolver.openOutputStream(uri!!, "wt")!!.use {
-                        it.write((payload ?: error("Backup vazio")).toByteArray(Charsets.UTF_8))
+                        File(payload ?: error("Backup vazio")).inputStream().use { input -> input.copyTo(it) }
                     }
                     true
                 }
-                "openBackup" -> contentResolver.openInputStream(uri!!)!!.bufferedReader().use { it.readText() }
+                "openBackup" -> copyOwned(uri!!, "biblioteca-backup.json")
                 "configureFolder" -> {
                     val tree = uri!!
                     val flags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
@@ -129,6 +205,16 @@ class MainActivity : FlutterActivity() {
                     preferences.edit().putString("tree", tree.toString()).putString("name", name).apply()
                     mapOf("name" to name, "created" to created)
                 }
+                "catalogFolder" -> {
+                    val tree = uri!!
+                    val items = children(tree, DocumentsContract.getTreeDocumentId(tree)).filter {
+                        it.name.endsWith(".xlsx", true) || it.name.endsWith(".zip", true)
+                    }
+                    check(items.count { it.name.endsWith(".xlsx", true) } == 1 && items.count { it.name.endsWith(".zip", true) } <= 1) {
+                        "Escolha uma pasta com uma planilha .xlsx e, opcionalmente, um ZIP."
+                    }
+                    items.map { copyOwned(DocumentsContract.buildDocumentUriUsingTree(tree, it.id), it.name, 256L * 1024 * 1024) }
+                }
                 "folder" -> scanTree(uri!!, emptySet()).map { it["path"]!! }
                 else -> {
                     val uris = mutableListOf<Uri>()
@@ -136,7 +222,10 @@ class MainActivity : FlutterActivity() {
                         for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri)
                     }
                     if (uris.isEmpty() && uri != null) uris.add(uri)
-                    uris.map { copyOwned(it, displayName(it)) }
+                    if (action == "catalogFiles") {
+                        check(uris.size <= 2) { "Escolha uma planilha e um ZIP por vez." }
+                        uris.map { copyOwned(it, displayName(it), 256L * 1024 * 1024) }
+                    } else uris.map { copyOwned(it, displayName(it)) }
                 }
             }
         }
@@ -213,11 +302,23 @@ class MainActivity : FlutterActivity() {
         return "Pasta de capas"
     }
 
-    private fun copyOwned(uri: Uri, name: String): String {
+    private fun copyOwned(uri: Uri, name: String, maxBytes: Long = Long.MAX_VALUE): String {
         val folder = File(cacheDir, "incoming").apply { mkdirs() }
         val safe = name.replace(Regex("[^a-zA-Z0-9._ -]"), "_")
         val target = File(folder, "${System.nanoTime()}_$safe")
-        contentResolver.openInputStream(uri)!!.use { input -> target.outputStream().use { input.copyTo(it) } }
+        try {
+            contentResolver.openInputStream(uri)!!.use { input -> target.outputStream().use { output ->
+                val buffer = ByteArray(65536)
+                var total = 0L
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    total += count
+                    check(total <= maxBytes) { "Arquivo maior que 256 MB." }
+                    output.write(buffer, 0, count)
+                }
+            } }
+        } catch (e: Exception) { target.delete(); throw e }
         return target.absolutePath
     }
 }
